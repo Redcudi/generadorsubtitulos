@@ -1,8 +1,8 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from faster_whisper import WhisperModel
-import uuid
 import os
+import uuid
 
 app = FastAPI()
 
@@ -17,20 +17,22 @@ model = WhisperModel("tiny", compute_type="int8", cpu_threads=4)
 
 @app.get("/")
 def root():
-    return {"message": "API activa para video a texto"}
+    return {"message": "API activa"}
 
-@app.post("/upload")
-async def upload_video(file: UploadFile = File(...)):
+@app.post("/transcribe")
+async def transcribe_file(file: UploadFile = File(...)):
     try:
-        filename = f"{uuid.uuid4()}_{file.filename}"
-        with open(filename, "wb") as f:
-            f.write(await file.read())
+        ext = file.filename.split('.')[-1]
+        filename = f"{uuid.uuid4()}.{ext}"
 
-        segments, _ = model.transcribe(filename, beam_size=5)
-        transcription = "\n".join([segment.text for segment in segments])
+        with open(filename, "wb") as buffer:
+            buffer.write(await file.read())
+
+        segments, _ = model.transcribe(filename)
+        transcription = " ".join([segment.text for segment in segments])
 
         os.remove(filename)
-        return {"text": transcription.strip()}
-    
+        return {"transcription": transcription.strip()}
+
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": "No se pudo transcribir", "detail": str(e)}
