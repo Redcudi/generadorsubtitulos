@@ -7,75 +7,68 @@ import logging
 
 app = FastAPI()
 
-# CORS settings
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
-    allow_credentials=True,
 )
 
 # Logging
 logging.basicConfig(level=logging.INFO)
 
-# Whisper model (tiny for fast deployment)
+# Cargar modelo
 model = WhisperModel("tiny", compute_type="int8", cpu_threads=4)
+
+def generate_srt(segments):
+    srt_output = []
+    for i, segment in enumerate(segments, start=1):
+        start = segment.start
+        end = segment.end
+
+        def format_time(t):
+            h = int(t // 3600)
+            m = int((t % 3600) // 60)
+            s = int(t % 60)
+            ms = int((t - int(t)) * 1000)
+            return f"{h:02}:{m:02}:{s:02},{ms:03}"
+
+        srt_output.append(f"{i}")
+        srt_output.append(f"{format_time(start)} --> {format_time(end)}")
+        srt_output.append(segment.text.strip())
+        srt_output.append("")  # Línea en blanco
+
+    return "\n".join(srt_output)
 
 @app.get("/")
 def root():
     return {"message": "API activa para generar subtítulos"}
 
 @app.post("/transcribe")
-async def transcribe(file: UploadFile = File(...)):
+async def transcribe_video(file: UploadFile = File(...)):
     try:
         # Guardar archivo temporal
-        temp_filename = f"{uuid.uuid4()}.mp4"
-        with open(temp_filename, "wb") as f:
+        file_id = str(uuid.uuid4())
+        temp_path = f"{file_id}.mp4"
+        with open(temp_path, "wb") as f:
             f.write(await file.read())
 
-        # Transcripción
-        segments, _ = model.transcribe(temp_filename, beam_size=5)
+        logging.info(f"Procesando archivo: {temp_path}")
 
-        # Generar TXT y SRT
-        base_name = temp_filename.replace(".mp4", "")
-        txt_path = f"{base_name}.txt"
-        srt_path = f"{base_name}.srt"
+        # Transcribir
+        segments, _ = model.transcribe(temp_path, beam_size=5)
+        transcription = " ".join([seg.text for seg in segments])
+        srt_text = generate_srt(segments)
 
-        with open(txt_path, "w") as txt_file:
-            for segment in segments:
-                txt_file.write(segment.text.strip() + " ")
-
-        with open(srt_path, "w") as srt_file:
-            for i, segment in enumerate(segments, start=1):
-                start = format_timestamp(segment.start)
-                end = format_timestamp(segment.end)
-                srt_file.write(f"{i}\n{start} --> {end}\n{segment.text.strip()}\n\n")
-
-        # Leer contenido para respuesta
-        with open(txt_path, "r") as txt_file:
-            txt_content = txt_file.read()
-
-        with open(srt_path, "r") as srt_file:
-            srt_content = srt_file.read()
-
-        # Eliminar archivos temporales
-        os.remove(temp_filename)
-        os.remove(txt_path)
-        os.remove(srt_path)
+        # Eliminar archivo temporal
+        os.remove(temp_path)
 
         return {
-            "transcription": txt_content.strip(),
-            "srt": srt_content.strip()
+            "transcription": transcription.strip(),
+            "srt": srt_text.strip()
         }
 
     except Exception as e:
         logging.error(f"❌ Error: {e}")
-        return {"error": "No se pudo procesar el video", "detail": str(e)}
-
-def format_timestamp(seconds: float) -> str:
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = int(seconds % 60)
-    millis = int((seconds - int(seconds)) * 1000)
-    return f"{hours:02}:{minutes:02}:{secs:02},{millis:03}"
+        return {"error": "No se pudo transcribir", "detail": str(e)}
