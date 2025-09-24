@@ -19,7 +19,7 @@ app.add_middleware(
 # Logger
 logging.basicConfig(level=logging.INFO)
 
-# Modelo
+# Modelo xd
 model = WhisperModel("tiny", compute_type="int8", cpu_threads=4)
 
 @app.get("/")
