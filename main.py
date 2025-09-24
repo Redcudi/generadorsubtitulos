@@ -7,7 +7,7 @@ import logging
 
 app = FastAPI()
 
-# CORS config
+# CORS configw
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
